@@ -127,6 +127,22 @@ class Commands:
         self.wallet.storage.write()
         return {'password':self.wallet.use_encryption}
 
+    @command('wp')
+    def createnewaddress(self):
+        """Creates new wallet address. """
+        is_change_addr = False
+        new_address = self.wallet.create_new_address(is_change_addr)
+        self.wallet.storage.write()
+        return {'addr': new_address}
+
+    @command('wp')
+    def createchangeaddress(self):
+        """Creates new wallet change address. """
+        is_change_addr = True
+        new_address = self.wallet.create_new_address(is_change_addr)
+        self.wallet.storage.write()
+        return {'addr': new_address}
+
     @command('')
     def getconfig(self, key):
         """Return a configuration variable. """
