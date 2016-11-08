@@ -175,7 +175,10 @@ class Commands:
         local_height = self.network.get_local_height()
         history = self.network.synchronous_get(('blockchain.address.get_history', [address]))
         for item in history:
-          item['confirmations'] = local_height - item['height']
+          if item['height'] > 0:
+              item['confirmations'] = local_height - item['height']
+          else:
+              item['confirmations'] = 0
           if is_mine:
             tx = self.wallet.transactions.get(item['tx_hash'])
             total_amount = 0
