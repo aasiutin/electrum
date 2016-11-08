@@ -127,6 +127,22 @@ class Commands:
         self.wallet.storage.write()
         return {'password':self.wallet.use_encryption}
 
+    @command('wp')
+    def createnewaddress(self):
+        """Creates new wallet address. """
+        is_change_addr = False
+        new_address = self.wallet.create_new_address(is_change_addr)
+        self.wallet.storage.write()
+        return {'addr': new_address}
+
+    @command('wp')
+    def createchangeaddress(self):
+        """Creates new wallet change address. """
+        is_change_addr = True
+        new_address = self.wallet.create_new_address(is_change_addr)
+        self.wallet.storage.write()
+        return {'addr': new_address}
+
     @command('')
     def getconfig(self, key):
         """Return a configuration variable. """
@@ -149,12 +165,25 @@ class Commands:
         s = Mnemonic(language).make_seed(nbits)
         return s.encode('utf8')
 
-    @command('n')
+    @command('wn')
     def getaddresshistory(self, address):
         """Return the transaction history of any address. Note: This is a
         walletless server query, results are not checked by SPV.
         """
-        return self.network.synchronous_get(('blockchain.address.get_history', [address]))
+        is_mine = self.wallet.is_mine(address)
+
+        local_height = self.network.get_local_height()
+        history = self.network.synchronous_get(('blockchain.address.get_history', [address]))
+        for item in history:
+          item['confirmations'] = local_height - item['height']
+          if is_mine:
+            tx = self.wallet.transactions.get(item['tx_hash'])
+            total_amount = 0
+            for out_n, addr, amount in tx.outputs():
+              if addr == address:
+                total_amount += amount
+            item['amount'] = total_amount
+        return history
 
     @command('w')
     def listunspent(self):
