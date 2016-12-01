@@ -95,6 +95,8 @@ class Abstract_Wallet(PrintError):
         self.use_change            = storage.get('use_change', True)
         self.multiple_change       = storage.get('multiple_change', False)
         self.labels                = storage.get('labels', {})
+        self.users                 = storage.get('users', {})
+        self.addresses_users       = storage.get('addresses_users', {})
         self.frozen_addresses      = set(storage.get('frozen_addresses',[]))
         self.stored_height         = storage.get('stored_height', 0)       # last known height (for offline mode)
         self.history               = storage.get('addr_history',{})        # address -> list(txid, height)
@@ -229,6 +231,34 @@ class Abstract_Wallet(PrintError):
 
     def is_up_to_date(self):
         with self.lock: return self.up_to_date
+
+    def add_user_address(self, user_code, address):
+        user_data = self.users.get(user_code)
+        if not user_data:
+            user_data = []
+            self.users[user_code] = user_data
+
+        if address not in user_data:
+            self.users[user_code].append(address)
+            self.storage.put('users', self.users)
+
+
+    def get_user_addresses(self, user_code):
+        return self.users.get(user_code)
+
+    def add_user_to_address(self, address, user_code):
+        addr_users = self.addresses_users.get(address)
+
+        if not addr_users:
+            addr_users = []
+            self.addresses_users[address] = addr_users
+
+        if user_code not in addr_users:
+            self.addresses_users[address].append(user_code)
+            self.storage.put('addresses_users', self.addresses_users)
+
+    def get_users_by_address(self, address):
+        return self.addresses_users.get(address)
 
     def set_label(self, name, text = None):
         changed = False
@@ -1706,4 +1736,3 @@ class Wallet(object):
         if wallet_type in wallet_constructors:
             return wallet_constructors[wallet_type]
         raise RuntimeError("Unknown wallet type: " + wallet_type)
-

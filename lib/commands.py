@@ -128,18 +128,28 @@ class Commands:
         return {'password':self.wallet.use_encryption}
 
     @command('wp')
-    def createnewaddress(self):
+    def createnewaddress(self, user_code=None):
         """Creates new wallet address. """
         is_change_addr = False
         new_address = self.wallet.create_new_address(is_change_addr)
+
+        if user_code is not None:
+            self.wallet.add_user_address(user_code, new_address)
+            self.wallet.add_user_to_address(new_address, user_code)
+
         self.wallet.storage.write()
         return {'addr': new_address}
 
     @command('wp')
-    def createchangeaddress(self):
+    def createchangeaddress(self, user_code=None):
         """Creates new wallet change address. """
         is_change_addr = True
         new_address = self.wallet.create_new_address(is_change_addr)
+
+        if user_code is not None:
+            self.wallet.add_user_address(user_code, new_address)
+            self.wallet.add_user_to_address(new_address, user_code)
+
         self.wallet.storage.write()
         return {'addr': new_address}
 
@@ -453,6 +463,63 @@ class Commands:
         tx = self._mktx([(destination, amount)], tx_fee, change_addr, domain, nocheck, unsigned, rbf)
         return tx.as_dict()
 
+    @command('wpn')
+    def paytouser(self, destination, amount, user_code, tx_fee=None, from_addr=None, change_addr=None, nocheck=False, unsigned=False, rbf=False):
+        """Create a transaction. """
+        domain = [from_addr] if from_addr else None
+
+        if change_addr is None:
+            change_addr = self.createchangeaddress()['addr']
+
+        # print('change address is', change_addr)
+
+        # freeze all user addresses
+        user_addresses = self.wallet.get_user_addresses(user_code)
+        # print('user addresses are', user_addresses)
+        if user_addresses:
+            self.wallet.set_frozen_state([user_addresses], True)
+
+        tx = self._mktx([(destination, amount)], tx_fee, change_addr, domain, nocheck, unsigned, rbf)
+
+        raw_tx = tx.serialize()
+
+        # print(tx)
+
+
+        # success = True
+        # tx_id = tx
+        success, tx_id = self.network.broadcast(tx, timeout=30)
+
+        if not success:
+            err = tx_id
+            return (False, err)
+
+        # unfreeze user addresses
+        # print('unfreezing addresses')
+        if user_addresses:
+            self.wallet.set_frozen_state([user_addresses], False)
+
+        # get tx inputs and their user codes
+        # add these user codes to change addr
+        change_addr_users = []
+        inputs = tx.inputs()
+        for tx_input in inputs:
+            if 'address' in tx_input:
+                input_users = self.wallet.get_users_by_address(tx_input['address'])
+                if input_users and type(input_users) == list:
+                    change_addr_users += input_users
+
+        #print('inputs users', change_addr_users)
+
+        for usr in change_addr_users:
+            self.wallet.add_user_address(usr, change_addr)
+            self.wallet.add_user_to_address(change_addr, usr)
+
+        # store wallet
+        self.wallet.storage.write()
+
+        return True, tx_id
+
     @command('wp')
     def paytomany(self, outputs, tx_fee=None, from_addr=None, change_addr=None, nocheck=False, unsigned=False, rbf=False):
         """Create a multi-output transaction. """
@@ -701,8 +768,8 @@ command_options = {
     'pending':     (None, "--pending",     "Show only pending requests."),
     'expired':     (None, "--expired",     "Show only expired requests."),
     'paid':        (None, "--paid",        "Show only paid requests."),
+    'user_code':   (None, "--user_code",   "User identifier."),
 }
-
 
 # don't use floats because of rounding errors
 from transaction import tx_from_str

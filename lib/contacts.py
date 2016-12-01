@@ -89,4 +89,3 @@ class Contacts(StoreDict):
             return regex.search(haystack).groups()[0]
         except AttributeError:
             return None
-
