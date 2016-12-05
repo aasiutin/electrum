@@ -45,6 +45,12 @@ from paymentrequest import PR_PAID, PR_UNPAID, PR_UNKNOWN, PR_EXPIRED
 import contacts
 known_commands = {}
 
+import logging
+import subprocess
+
+log_file_path = os.path.expanduser('~/.electrum/electrum.log')
+logging.basicConfig(filename=log_file_path, level=logging.DEBUG)
+
 class Command:
 
     def __init__(self, func, s):
@@ -466,57 +472,72 @@ class Commands:
     @command('wpn')
     def paytouser(self, destination, amount, user_code, tx_fee=None, from_addr=None, change_addr=None, nocheck=False, unsigned=False, rbf=False):
         """Create a transaction. """
-        domain = [from_addr] if from_addr else None
+        with self.wallet.lock:
 
-        if change_addr is None:
-            change_addr = self.createchangeaddress()['addr']
-
-        # print('change address is', change_addr)
-
-        # freeze all user addresses
-        user_addresses = self.wallet.get_user_addresses(user_code)
-        # print('user addresses are', user_addresses)
-        if user_addresses:
-            self.wallet.set_frozen_state([user_addresses], True)
-
-        tx = self._mktx([(destination, amount)], tx_fee, change_addr, domain, nocheck, unsigned, rbf)
-
-        raw_tx = tx.serialize()
-
-        # print(tx)
+            logging.debug('payto user method %s %s %s', destination, amount, user_code)
 
 
-        # success = True
-        # tx_id = tx
-        success, tx_id = self.network.broadcast(tx, timeout=30)
+            domain = [from_addr] if from_addr else None
 
-        if not success:
-            err = tx_id
-            return (False, err)
+            if change_addr is None:
+                change_addr = self.createchangeaddress()['addr']
 
-        # unfreeze user addresses
-        # print('unfreezing addresses')
-        if user_addresses:
-            self.wallet.set_frozen_state([user_addresses], False)
+            # print('change address is', change_addr)
 
-        # get tx inputs and their user codes
-        # add these user codes to change addr
-        change_addr_users = []
-        inputs = tx.inputs()
-        for tx_input in inputs:
-            if 'address' in tx_input:
-                input_users = self.wallet.get_users_by_address(tx_input['address'])
-                if input_users and type(input_users) == list:
-                    change_addr_users += input_users
+            # freeze all user addresses
+            user_addresses = self.wallet.get_user_addresses(user_code)
 
-        #print('inputs users', change_addr_users)
+            logging.debug('user %s addresses are %s', user_code, user_addresses)
 
-        for usr in change_addr_users:
-            self.wallet.add_user_address(usr, change_addr)
-            self.wallet.add_user_to_address(change_addr, usr)
+            if user_addresses:
+                logging.debug('freezing user %s addresses', user_code)
+                self.wallet.set_frozen_state([user_addresses], True)
 
-        # store wallet
-        self.wallet.storage.write()
+            tx = self._mktx([(destination, amount)], tx_fee, change_addr, domain, nocheck, unsigned, rbf)
+            raw_tx = tx.serialize()
+
+            logging.debug('broadcasting transaction for %s: %s', user_code, raw_tx)
+
+            success, tx_id = self.network.broadcast(tx, timeout=30)
+
+            # if success is False, tx_id contains error message
+            if not success:
+                err = tx_id
+                logging.debug(err)
+                return (False, err)
+
+            logging.debug('user %s transaction %s', user_code, tx_id)
+
+            # unfreeze user addresses
+            if user_addresses:
+                logging.debug('unfreezing user %s addresses', user_code)
+                self.wallet.set_frozen_state([user_addresses], False)
+
+            # get tx inputs and their user codes
+            # add these user codes to change addr
+
+            logging.debug(
+                'change user %s address is %s, getting input users adresses',
+                user_code,
+                change_addr)
+
+            change_addr_users = []
+            inputs = tx.inputs()
+            for tx_input in inputs:
+                if 'address' in tx_input:
+                    input_users = self.wallet.get_users_by_address(tx_input['address'])
+                    if input_users and type(input_users) == list:
+                        change_addr_users += input_users
+
+            logging.debug('input address users are %s', change_addr_users)
+            logging.debug('add users as change address owners...', change_addr_users)
+
+            for usr in change_addr_users:
+                self.wallet.add_user_address(usr, change_addr)
+                self.wallet.add_user_to_address(change_addr, usr)
+
+            # store wallet
+            self.wallet.storage.write()
 
         return True, tx_id
 
