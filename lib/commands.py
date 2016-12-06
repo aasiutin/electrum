@@ -512,13 +512,13 @@ class Commands:
 
             # success = True
             # tx_id = raw_tx
-            success, tx_id = self.network.broadcast(tx, timeout=30)
+            success, tx_id = self.network.broadcast(tx, timeout=60)
 
             # if success is False, tx_id contains error message
             if not success:
                 err = tx_id
                 logging.debug(err)
-                return (False, err)
+                return (False, err, raw_tx)
 
             logging.debug('user %s transaction %s', user_code, tx_id)
 
