@@ -76,7 +76,7 @@ setup(
             'locale/*/LC_MESSAGES/electrum.mo',
         ]
     },
-    scripts=['electrum'],
+    scripts=['electrum', 'electrum_offline'],
     data_files=data_files,
     description="Lightweight Bitcoin Wallet",
     author="Thomas Voegtlin",
