@@ -36,7 +36,7 @@ from functools import wraps
 from decimal import Decimal
 
 import util
-from util import print_msg, format_satoshis, print_stderr
+from util import print_msg, format_satoshis, print_stderr, NotEnoughFunds
 import bitcoin
 from bitcoin import is_address, hash_160_to_bc_address, hash_160, COIN, TYPE_ADDRESS
 from transaction import Transaction
@@ -472,17 +472,14 @@ class Commands:
     @command('wpn')
     def paytouser(self, destination, amount, user_code, tx_fee=None, from_addr=None, change_addr=None, nocheck=False, unsigned=False, rbf=False):
         """Create a transaction. """
+
         with self.wallet.lock:
-
             logging.debug('payto user method %s %s %s', destination, amount, user_code)
-
 
             domain = [from_addr] if from_addr else None
 
             if change_addr is None:
                 change_addr = self.createchangeaddress()['addr']
-
-            # print('change address is', change_addr)
 
             # freeze all user addresses
             user_addresses = self.wallet.get_user_addresses(user_code)
@@ -491,13 +488,29 @@ class Commands:
 
             if user_addresses:
                 logging.debug('freezing user %s addresses', user_code)
-                self.wallet.set_frozen_state([user_addresses], True)
+                self.wallet.set_frozen_state(user_addresses, True)
 
-            tx = self._mktx([(destination, amount)], tx_fee, change_addr, domain, nocheck, unsigned, rbf)
-            raw_tx = tx.serialize()
+                logging.debug("frozen addresses are")
+                logging.debug(self.wallet.frozen_addresses)
+
+            try:
+                tx = self._mktx([(destination, amount)], tx_fee, change_addr, domain, nocheck, unsigned, rbf)
+                raw_tx = tx.serialize()
+            except NotEnoughFunds as e:
+                return (False, "Not Enough funds")
+            finally:
+                # unfreeze user addresses
+                if user_addresses:
+                    logging.debug('unfreezing user %s addresses', user_code)
+                    self.wallet.set_frozen_state(user_addresses, False)
+                    logging.debug("frozen addresses are")
+                    logging.debug(self.wallet.frozen_addresses)
+
 
             logging.debug('broadcasting transaction for %s: %s', user_code, raw_tx)
 
+            # success = True
+            # tx_id = raw_tx
             success, tx_id = self.network.broadcast(tx, timeout=30)
 
             # if success is False, tx_id contains error message
@@ -507,14 +520,6 @@ class Commands:
                 return (False, err)
 
             logging.debug('user %s transaction %s', user_code, tx_id)
-
-            # unfreeze user addresses
-            if user_addresses:
-                logging.debug('unfreezing user %s addresses', user_code)
-                self.wallet.set_frozen_state([user_addresses], False)
-
-            # get tx inputs and their user codes
-            # add these user codes to change addr
 
             logging.debug(
                 'change user %s address is %s, getting input users adresses',
@@ -530,7 +535,7 @@ class Commands:
                         change_addr_users += input_users
 
             logging.debug('input address users are %s', change_addr_users)
-            logging.debug('add users as change address owners...', change_addr_users)
+            logging.debug(change_addr_users)
 
             for usr in change_addr_users:
                 self.wallet.add_user_address(usr, change_addr)
