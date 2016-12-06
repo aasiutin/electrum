@@ -497,6 +497,7 @@ class Commands:
                 tx = self._mktx([(destination, amount)], tx_fee, change_addr, domain, nocheck, unsigned, rbf)
                 raw_tx = tx.serialize()
             except NotEnoughFunds as e:
+                logging.debug('unable to send %s to user %s, not enough funds', str(amount), user_code)
                 return (False, "Not Enough funds")
             finally:
                 # unfreeze user addresses
