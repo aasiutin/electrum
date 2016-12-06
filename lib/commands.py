@@ -512,7 +512,7 @@ class Commands:
 
             # success = True
             # tx_id = raw_tx
-            success, tx_id = self.network.broadcast(tx, timeout=60)
+            success, tx_id = self.network.broadcast(tx, timeout=10)
 
             # if success is False, tx_id contains error message
             if not success:
