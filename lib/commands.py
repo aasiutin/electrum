@@ -473,77 +473,76 @@ class Commands:
     def paytouser(self, destination, amount, user_code, tx_fee=None, from_addr=None, change_addr=None, nocheck=False, unsigned=False, rbf=False):
         """Create a transaction. """
 
-        with self.wallet.lock:
-            logging.debug('payto user method %s %s %s', destination, amount, user_code)
+        logging.debug('payto user method %s %s %s', destination, amount, user_code)
 
-            domain = [from_addr] if from_addr else None
+        domain = [from_addr] if from_addr else None
 
-            if change_addr is None:
-                change_addr = self.createchangeaddress()['addr']
+        if change_addr is None:
+            change_addr = self.createchangeaddress()['addr']
 
-            # freeze all user addresses
-            user_addresses = self.wallet.get_user_addresses(user_code)
+        # freeze all user addresses
+        user_addresses = self.wallet.get_user_addresses(user_code)
 
-            logging.debug('user %s addresses are %s', user_code, user_addresses)
+        logging.debug('user %s addresses are %s', user_code, user_addresses)
 
+        if user_addresses:
+            logging.debug('freezing user %s addresses', user_code)
+            self.wallet.set_frozen_state(user_addresses, True)
+
+            logging.debug("frozen addresses are")
+            logging.debug(self.wallet.frozen_addresses)
+
+        try:
+            tx = self._mktx([(destination, amount)], tx_fee, change_addr, domain, nocheck, unsigned, rbf)
+            raw_tx = tx.serialize()
+        except NotEnoughFunds as e:
+            logging.debug('unable to send %s to user %s, not enough funds', str(amount), user_code)
+            return (False, "Not Enough funds")
+        finally:
+            # unfreeze user addresses
             if user_addresses:
-                logging.debug('freezing user %s addresses', user_code)
-                self.wallet.set_frozen_state(user_addresses, True)
-
+                logging.debug('unfreezing user %s addresses', user_code)
+                self.wallet.set_frozen_state(user_addresses, False)
                 logging.debug("frozen addresses are")
                 logging.debug(self.wallet.frozen_addresses)
 
-            try:
-                tx = self._mktx([(destination, amount)], tx_fee, change_addr, domain, nocheck, unsigned, rbf)
-                raw_tx = tx.serialize()
-            except NotEnoughFunds as e:
-                logging.debug('unable to send %s to user %s, not enough funds', str(amount), user_code)
-                return (False, "Not Enough funds")
-            finally:
-                # unfreeze user addresses
-                if user_addresses:
-                    logging.debug('unfreezing user %s addresses', user_code)
-                    self.wallet.set_frozen_state(user_addresses, False)
-                    logging.debug("frozen addresses are")
-                    logging.debug(self.wallet.frozen_addresses)
 
+        logging.debug('broadcasting transaction for %s: %s', user_code, raw_tx)
 
-            logging.debug('broadcasting transaction for %s: %s', user_code, raw_tx)
+        # success = True
+        # tx_id = raw_tx
+        success, tx_id = self.network.broadcast(tx, timeout=10)
 
-            # success = True
-            # tx_id = raw_tx
-            success, tx_id = self.network.broadcast(tx, timeout=10)
+        # if success is False, tx_id contains error message
+        if not success:
+            err = tx_id
+            logging.debug(err)
+            return (False, err, raw_tx)
 
-            # if success is False, tx_id contains error message
-            if not success:
-                err = tx_id
-                logging.debug(err)
-                return (False, err, raw_tx)
+        logging.debug('user %s transaction %s', user_code, tx_id)
 
-            logging.debug('user %s transaction %s', user_code, tx_id)
+        logging.debug(
+            'change user %s address is %s, getting input users adresses',
+            user_code,
+            change_addr)
 
-            logging.debug(
-                'change user %s address is %s, getting input users adresses',
-                user_code,
-                change_addr)
+        change_addr_users = []
+        inputs = tx.inputs()
+        for tx_input in inputs:
+            if 'address' in tx_input:
+                input_users = self.wallet.get_users_by_address(tx_input['address'])
+                if input_users and type(input_users) == list:
+                    change_addr_users += input_users
 
-            change_addr_users = []
-            inputs = tx.inputs()
-            for tx_input in inputs:
-                if 'address' in tx_input:
-                    input_users = self.wallet.get_users_by_address(tx_input['address'])
-                    if input_users and type(input_users) == list:
-                        change_addr_users += input_users
+        logging.debug('input address users are %s', change_addr_users)
+        logging.debug(change_addr_users)
 
-            logging.debug('input address users are %s', change_addr_users)
-            logging.debug(change_addr_users)
+        for usr in change_addr_users:
+            self.wallet.add_user_address(usr, change_addr)
+            self.wallet.add_user_to_address(change_addr, usr)
 
-            for usr in change_addr_users:
-                self.wallet.add_user_address(usr, change_addr)
-                self.wallet.add_user_to_address(change_addr, usr)
-
-            # store wallet
-            self.wallet.storage.write()
+        # store wallet
+        self.wallet.storage.write()
 
         return True, tx_id
 
