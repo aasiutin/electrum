@@ -517,7 +517,15 @@ class Commands:
         if not success:
             err = tx_id
             logging.debug(err)
-            return (False, err, raw_tx)
+            logging.debug("Trying to look for tx in network...")
+            res = self.searchtransaction(address, raw_tx)
+
+            if res["success"]:
+                logging.debug("Found transaction in network, txid is %s", res["tx_hash"])
+                success = True
+                tx_id = res["tx_hash"]
+            else:
+                return (False, err, raw_tx)
 
         logging.debug('user %s transaction %s', user_code, tx_id)
 
@@ -545,6 +553,38 @@ class Commands:
         self.wallet.storage.write()
 
         return True, tx_id
+
+    @command('wn')
+    def searchtransaction(self, address, raw_tx):
+
+        logging.debug("Searching transaction %s to %s", raw_tx[0:15], address)
+
+        addr_history = self.getaddresshistory(address)
+
+        if not addr_history:
+
+            logging.debug("address %s does not have history items", address)
+            return {
+                "success" : False,
+                "msg": "Address does not have transactions"
+            }
+
+        for history_item in addr_history:
+            history_raw_tx = self.gettransaction(history_item['tx_hash'])
+            logging.debug(history_item)
+            logging.debug(history_raw_tx)
+            if history_raw_tx['hex'] == raw_tx:
+                return {
+                    "success": True,
+                    "tx_hash": history_item['tx_hash']
+                }
+
+        logging.debug("have not found any tx that equals %s", raw_tx[0:15])
+
+        return {
+            "success": False,
+            "msg": "address does not have provided transaction in network"
+        }
 
     @command('wp')
     def paytomany(self, outputs, tx_fee=None, from_addr=None, change_addr=None, nocheck=False, unsigned=False, rbf=False):
