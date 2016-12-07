@@ -64,6 +64,12 @@ import paymentrequest
 
 from storage import WalletStorage
 
+import logging
+import subprocess
+log_file_path = os.path.expanduser('~/.electrum/electrum.log')
+logging.basicConfig(filename=log_file_path, level=logging.DEBUG)
+
+
 TX_STATUS = [
     _('Replaceable'),
     _('Unconfirmed parent'),
@@ -233,29 +239,43 @@ class Abstract_Wallet(PrintError):
         with self.lock: return self.up_to_date
 
     def add_user_address(self, user_code, address):
+
+        logging.debug('adding user %s addr %s', user_code, address)
+
         user_data = self.users.get(user_code)
+        logging.debug('user data is %s', user_data)
+
         if not user_data:
             user_data = []
             self.users[user_code] = user_data
 
         if address not in user_data:
+            logging.debug('address %s is not in user data, adding it', address)
             self.users[user_code].append(address)
             self.storage.put('users', self.users)
+        else:
+            logging.debug('address %s is already in user data', address)
 
 
     def get_user_addresses(self, user_code):
         return self.users.get(user_code)
 
     def add_user_to_address(self, address, user_code):
+        logging.debug('adding user %s to address %s', user_code, address)
+
         addr_users = self.addresses_users.get(address)
+        logging.debug('address users are %s', addr_users)
 
         if not addr_users:
             addr_users = []
             self.addresses_users[address] = addr_users
 
         if user_code not in addr_users:
+            logging.debug('user %s is not in addr %s, adding it', user_code, address)
             self.addresses_users[address].append(user_code)
             self.storage.put('addresses_users', self.addresses_users)
+        else:
+            logging.debug('user %s is already in addr %s', user_code, address)
 
     def get_users_by_address(self, address):
         return self.addresses_users.get(address)

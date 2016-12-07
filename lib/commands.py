@@ -47,7 +47,6 @@ known_commands = {}
 
 import logging
 import subprocess
-
 log_file_path = os.path.expanduser('~/.electrum/electrum.log')
 logging.basicConfig(filename=log_file_path, level=logging.DEBUG)
 
@@ -495,6 +494,10 @@ class Commands:
         try:
             tx = self._mktx([(destination, amount)], tx_fee, change_addr, domain, nocheck, unsigned, rbf)
             raw_tx = tx.serialize()
+            # raw_tx = '0100000002b4e11796edd2ce6e7d697da5453731ef1c974b5171598fc5220b12097bc57a07010000006b4830450221008149dcde874f89c0c8590c6b442f173fa1feb0a8e9ff216fc139dbb6f64858cb0220134ca027d0bca58a8fffe99e06495e34d7b073954a21b197548377c720169da3012103165c8007b9df7059ef571d2126db1aa321c036d26c9a55d0fb84e79950958362ffffffff00b327d46a31850384445fa58a341df54f478a5bb6c12c44963437715e0b37ba010000006a4730440220677462424a3e00e6920d318027cea9d3a2e79e1fe04e6a5735e7726b2e7f3b8d022015528f421850835903b6af781cec2d74cb3d0f7b938e4c8f2e64f778c25e70c9012103016e94037e27cf423c0230eff988c5135999b88294bc0a7ad6adf451a2bf090fffffffff0238730e00000000001976a91452d1d5cf5c60bf94d1398fbaabdc3c903811f84788ac80969800000000001976a914790b53e356d0f9fea8283c07020af3a8d176f93c88ac00000000'
+            # tx = Transaction(raw_tx)
+
+
         except NotEnoughFunds as e:
             logging.debug('unable to send %s to user %s, not enough funds', str(amount), user_code)
             return (False, "Not Enough funds")
@@ -509,8 +512,10 @@ class Commands:
 
         logging.debug('broadcasting transaction for %s: %s', user_code, raw_tx)
 
+        self.update_tx_change_addr_users(tx, change_addr)
+
         # success = True
-        # tx_id = raw_tx
+        # tx_id = 'e834f5869199809c64affc92bdd32a38c0f11c1b983f945128771eb63b386d59'
         success, tx_id = self.network.broadcast(tx, timeout=10)
 
         # if success is False, tx_id contains error message
@@ -518,7 +523,7 @@ class Commands:
             err = tx_id
             logging.debug(err)
             logging.debug("Trying to look for tx in network...")
-            res = self.searchtransaction(address, raw_tx)
+            res = self.searchtransaction(address, raw_tx, False)
 
             if res["success"]:
                 logging.debug("Found transaction in network, txid is %s", res["tx_hash"])
@@ -529,10 +534,21 @@ class Commands:
 
         logging.debug('user %s transaction %s', user_code, tx_id)
 
+        # store wallet
+        self.wallet.storage.write()
+
+        return True, tx_id
+
+    def update_tx_change_addr_users(self, tx, change_addr=''):
+
+        if not change_addr:
+            change_addr = self.findtxchangeaddr(tx)
+
+        if not change_addr:
+            logging.debug("Can not find change address for tx %s", tx.hash())
+
         logging.debug(
-            'change user %s address is %s, getting input users adresses',
-            user_code,
-            change_addr)
+            'change address is %s, getting input users adresses', change_addr)
 
         change_addr_users = []
         inputs = tx.inputs()
@@ -546,16 +562,25 @@ class Commands:
         logging.debug(change_addr_users)
 
         for usr in change_addr_users:
+            logging.debug('add addr %s to user %s', change_addr, usr)
             self.wallet.add_user_address(usr, change_addr)
             self.wallet.add_user_to_address(change_addr, usr)
 
-        # store wallet
+        logging.debug("saving wallet...")
         self.wallet.storage.write()
 
-        return True, tx_id
+    def findtxchangeaddr(self, tx):
+        outputs = tx.outputs()
+
+        for output in outputs:
+            output_addr = output[1]
+            if self.wallet.is_change(output_addr):
+                return output_addr
+
+        return False
 
     @command('wn')
-    def searchtransaction(self, address, raw_tx):
+    def searchtransaction(self, address, raw_tx, update_change_add_users=True):
 
         logging.debug("Searching transaction %s to %s", raw_tx[0:15], address)
 
@@ -574,6 +599,11 @@ class Commands:
             logging.debug(history_item)
             logging.debug(history_raw_tx)
             if history_raw_tx['hex'] == raw_tx:
+
+                if update_change_add_users:
+                    tx = Transaction(raw_tx)
+                    self.update_tx_change_addr_users(tx)
+
                 return {
                     "success": True,
                     "tx_hash": history_item['tx_hash']
@@ -835,6 +865,7 @@ command_options = {
     'expired':     (None, "--expired",     "Show only expired requests."),
     'paid':        (None, "--paid",        "Show only paid requests."),
     'user_code':   (None, "--user_code",   "User identifier."),
+    'update_change_add_users': (None, "--update_change_add_users",   "Update wallet addr user ownershi"),
 }
 
 # don't use floats because of rounding errors
