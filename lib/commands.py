@@ -523,7 +523,7 @@ class Commands:
             err = tx_id
             logging.debug(err)
             logging.debug("Trying to look for tx in network...")
-            res = self.searchtransaction(address, raw_tx, False)
+            res = self.searchtransaction(destination, raw_tx, False)
 
             if res["success"]:
                 logging.debug("Found transaction in network, txid is %s", res["tx_hash"])
