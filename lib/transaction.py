@@ -759,7 +759,6 @@ class Transaction:
         self.deserialize()
         out = {
             'hex': self.raw,
-            'fee': self.get_fee(),
             'complete': self.is_complete(),
             'final': self.is_final(),
         }

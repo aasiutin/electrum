@@ -44,6 +44,7 @@ import paymentrequest
 from paymentrequest import PR_PAID, PR_UNPAID, PR_UNKNOWN, PR_EXPIRED
 import contacts
 import logging
+from pprint import pprint
 
 log_file_path = os.path.expanduser('~/.electrum/electrum.log')
 logging.basicConfig(filename=log_file_path, level=logging.DEBUG)
@@ -470,6 +471,23 @@ class Commands:
         return tx.as_dict()
 
     @command('wpn')
+    def gettxfee(self, txid):
+
+        output_value_index = 2
+
+        tx = self.gettransaction(txid)
+        tx = Transaction(tx['hex'])
+        inputs = tx.inputs()
+        for inp in inputs:
+            prevout_tx = self.gettransaction(inp['prevout_hash'])
+            prevout_tx = Transaction(prevout_tx['hex'])
+            inp['value'] = prevout_tx.outputs()[inp['prevout_n']][output_value_index]
+
+        fee = Decimal(tx.get_fee())/Decimal(COIN)
+
+        return fee.to_eng_string()
+
+    @command('wpn')
     def paytouser(self, destination, amount, user_code, tx_fee=None, from_addr=None, change_addr=None, nocheck=False, unsigned=False, rbf=False):
         """Create a transaction. """
 
@@ -549,8 +567,9 @@ class Commands:
 
         return {
             "success": True,
-            "tx_id": tx_id,
-            "fee": tx.get_fee()
+            "fee": self.gettxfee(tx_id),
+            "tx_id": tx_id
+
         }
 
     def update_tx_change_addr_users(self, tx, change_addr=''):
@@ -620,7 +639,8 @@ class Commands:
 
                 return {
                     "success": True,
-                    "tx_hash": history_item['tx_hash']
+                    "tx_hash": history_item['tx_hash'],
+                    "fee": self.gettxfee(history_item['tx_hash'])
                 }
 
         logging.debug("have not found any tx that equals %s", raw_tx[0:15])
