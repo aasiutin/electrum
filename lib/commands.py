@@ -43,12 +43,12 @@ from transaction import Transaction
 import paymentrequest
 from paymentrequest import PR_PAID, PR_UNPAID, PR_UNKNOWN, PR_EXPIRED
 import contacts
-known_commands = {}
-
 import logging
-import subprocess
+
 log_file_path = os.path.expanduser('~/.electrum/electrum.log')
 logging.basicConfig(filename=log_file_path, level=logging.DEBUG)
+
+known_commands = {}
 
 class Command:
 
@@ -76,6 +76,7 @@ def command(s):
         global known_commands
         name = func.__name__
         known_commands[name] = Command(func, s)
+
         @wraps(func)
         def func_wrapper(*args, **kwargs):
             return func(*args, **kwargs)
@@ -85,7 +86,7 @@ def command(s):
 
 class Commands:
 
-    def __init__(self, config, wallet, network, callback = None, password=None, new_password=None):
+    def __init__(self, config, wallet, network, callback=None, password=None, new_password=None):
         self.config = config
         self.wallet = wallet
         self.network = network
@@ -97,7 +98,7 @@ class Commands:
     def _run(self, method, args, password_getter):
         cmd = known_commands[method]
         if cmd.requires_password and self.wallet.use_encryption:
-            self._password = apply(password_getter,())
+            self._password = apply(password_getter, ())
             if self._password is None:
                 return
         f = getattr(self, method)
@@ -130,7 +131,7 @@ class Commands:
         """Change wallet password. """
         self.wallet.update_password(self._password, self.new_password)
         self.wallet.storage.write()
-        return {'password':self.wallet.use_encryption}
+        return {'password': self.wallet.use_encryption}
 
     @command('wp')
     def createnewaddress(self, user_code=None):
@@ -500,7 +501,12 @@ class Commands:
 
         except NotEnoughFunds as e:
             logging.debug('unable to send %s to user %s, not enough funds', str(amount), user_code)
-            return (False, "Not Enough funds")
+
+            return {
+                "success": False,
+                "message": "Not Enough funds"
+            }
+
         finally:
             # unfreeze user addresses
             if user_addresses:
@@ -530,14 +536,22 @@ class Commands:
                 success = True
                 tx_id = res["tx_hash"]
             else:
-                return (False, err, raw_tx)
+                return {
+                    "success": False,
+                    "message": err,
+                    "raw_tx": raw_tx
+                }
 
         logging.debug('user %s transaction %s', user_code, tx_id)
 
         # store wallet
         self.wallet.storage.write()
 
-        return True, tx_id
+        return {
+            "success": True,
+            "tx_id": tx_id,
+            "fee": tx.get_fee()
+        }
 
     def update_tx_change_addr_users(self, tx, change_addr=''):
 
@@ -688,7 +702,7 @@ class Commands:
                 continue
             item = addr
             if show_balance:
-                item += ", "+ format_satoshis(sum(self.wallet.get_addr_balance(addr)))
+                item += ", " + format_satoshis(sum(self.wallet.get_addr_balance(addr)))
             if show_labels:
                 item += ', ' + repr(self.wallet.labels.get(addr, ''))
             out.append(item)
